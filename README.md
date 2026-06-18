@@ -4,6 +4,8 @@
 
 Spicy Player is an offline music player for Android with a port/recreation of [Spicy Lyrics](https://github.com/Spikerko/spicy-lyrics) - A [Spicetify](https://spicetify.app/) Extension, designed to achieve **visual parity** with Spicy Lyrics' rendering. Built using **Jetpack Compose (Canvas API)** and **ExoPlayer**.
 
+This repo also includes an **iOS SwiftUI app target** under [ios/project.yml](ios/project.yml). The iOS version uses an app-local library workflow: import songs or whole folders, copy audio and `.ttml` files into the app's storage, auto-pair by basename, and render synchronized lyrics during playback.
+
 > [!WARNING]
 > This is a work in progress. The app is not yet complete and may have bugs.
 
@@ -73,6 +75,29 @@ Find the full feature and bug roadmap [here](plan.md).
 - **Media3 (ExoPlayer)**: Industrial-grade media decoding and playback.
 - **Kotlin Coroutines**: For non-blocking IO during TTML and audio file scanning.
 - **Custom XML Pull Parser**: For lightweight, low-memory performance on large lyric files.
+- **SwiftUI + AVFoundation**: For the iOS player, local file importing, and synchronized lyric rendering.
+
+## Manual Builds
+
+GitHub Actions includes a manual workflow at [.github/workflows/build-mobile.yml](.github/workflows/build-mobile.yml).
+
+- `platform`: build `android`, `ios`, or `both`
+- `android_variant`: build `Debug` or `Release`
+- `ios_export`: export an unsigned device `ipa` for sideload tools or an unsigned `simulator-app`
+
+The workflow generates the Xcode project from [ios/project.yml](ios/project.yml) using XcodeGen on the macOS runner, then builds either:
+
+- an unsigned device `.ipa` suitable for local resigning/sideloading tools such as Sideloadly
+- an unsigned iOS Simulator `.app` zip
+
+The iOS app icons are generated during the Xcode build and in CI from the existing Android source logo at [app/src/main/res/drawable/logo.png](app/src/main/res/drawable/logo.png), so the repo does not need committed per-size iOS icon PNGs.
+
+### iOS Import Behavior
+
+- `Import Song`: copies one audio file into the app-local library and attempts to auto-import a sibling `.ttml`
+- `Import Folder`: recursively scans a selected folder for supported audio files and `.ttml` files
+- `Attach Lyrics`: manually pairs a selected `.ttml` file with the currently loaded track
+- Imported tracks persist across launches because they are stored in the app's `Application Support` directory
 
 ## License
 

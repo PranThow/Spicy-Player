@@ -1,0 +1,160 @@
+name: Build Mobile
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Build Android, iOS, or both"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - both
+          - android
+          - ios
+      android_variant:
+        description: "Android Gradle variant"
+        required: true
+        default: "Release"
+        type: choice
+        options:
+          - Debug
+          - Release
+      ios_export:
+        description: "iOS output type"
+        required: true
+        default: "ipa"
+        type: choice
+        options:
+          - ipa
+          - simulator-app
+
+jobs:
+  android:
+    if: ${{ inputs.platform == 'both' || inputs.platform == 'android' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build Android artifact
+        run: gradle app:assemble${{ inputs.android_variant }}
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ inputs.android_variant }}
+          path: app/build/outputs/apk/${{ fromJSON('{"Debug":"debug","Release":"release"}')[inputs.android_variant] }}/*.apk
+
+  ios:
+    if: ${{ inputs.platform == 'both' || inputs.platform == 'ios' }}
+    runs-on: macos-latest
+    permissions:
+      contents: read
+
+    env:
+      IOS_SCHEME: SpicyPlayeriOS
+      IOS_PROJECT: ios/SpicyPlayeriOS.xcodeproj
+      IOS_BUNDLE_ID: com.tx24.spicyplayer
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate --spec project.yml
+
+      - name: Build simulator app
+        if: ${{ inputs.ios_export == 'simulator-app' }}
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "$IOS_PROJECT" \
+            -scheme "$IOS_SCHEME" \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild-ios.log"
+
+      - name: Build unsigned device app
+        if: ${{ inputs.ios_export == 'ipa' }}
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "$IOS_PROJECT" \
+            -scheme "$IOS_SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild-ios.log"
+
+      - name: Package simulator app
+        if: ${{ inputs.ios_export == 'simulator-app' }}
+        run: |
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -path "*Build/Products/Release-iphonesimulator/Spicy Player.app" -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "Simulator .app not found."
+            exit 1
+          fi
+          mkdir -p artifacts
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" artifacts/spicy-player-ios-simulator-app.zip
+
+      - name: Package unsigned IPA
+        if: ${{ inputs.ios_export == 'ipa' }}
+        run: |
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -path "*Build/Products/Release-iphoneos/Spicy Player.app" -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "Device .app not found."
+            exit 1
+          fi
+          mkdir -p artifacts/Payload
+          cp -R "$APP_PATH" artifacts/Payload/
+          cd artifacts
+          zip -r spicy-player.ipa Payload
+
+      - name: Upload IPA artifact
+        if: ${{ inputs.ios_export == 'ipa' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: spicy-player-ipa
+          path: artifacts/spicy-player.ipa
+
+      - name: Upload simulator app
+        if: ${{ inputs.ios_export == 'simulator-app' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-app
+          path: artifacts/spicy-player-ios-simulator-app.zip
+
+      - name: Upload iOS build log
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-log
+          path: ${{ runner.temp }}/xcodebuild-ios.log

@@ -346,7 +346,7 @@ final class PlayerViewModel: ObservableObject {
         for item in items {
             let commonKey = item.commonKey?.rawValue.lowercased()
             let identifier = item.identifier?.rawValue.lowercased()
-            let rawKeyDescription = String(describing: item.key ?? "").lowercased()
+            let rawKeyDescription = item.key.map { String(describing: $0) }?.lowercased() ?? ""
             let looksLikeArtwork =
                 commonKey == "artwork" ||
                 identifier?.contains("artwork") == true ||
